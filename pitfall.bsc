@@ -1,0 +1,248 @@
+'
+'	A pitfall lookalike
+'
+cls:sprite clear:' clear screen & load sprites
+gload "graphics.gfx":' load the graphics file built in
+' 
+' main loop
+'
+score = 0:lives = 3
+roomaddr = alloc(1) 
+room = $C4 : ' using the original 2600 logic for room calculation
+xHarry = 120: yHarry = 120 : runharryCount = 0
+roombottom = 200
+' set Harry sequence
+dim runharrys(6)
+for i = 0 to 5
+	read runharrys(i)
+next
+'
+roomnext = alloc(32)
+roomprev = alloc(32)
+room = $C4 : ' using the original 2600 logic for room calculation
+repeat
+	call PlayRoom()
+until lives = 0
+'
+' PlayLevel procedure
+'
+proc PlayRoom()
+	sprite clear
+	call DrawRoom()
+	sprite 0 image $C0 to xHarry, yHarry
+	remaining = 256
+	repeat
+		repeat
+			if event(tMoveHarry,4) then call MoveHarry()
+		until remaining = 0
+	until remaining = 0 | lives = 0
+endproc
+'
+proc DrawRoom()
+	palette 5,$2E,$6D,$98
+	palette 6,$FF,$C5,$1D
+	palette 4,$64,$92,$28
+	palette 11,$C8,$5F,$24
+	palette 10,$0C,$4A,$1C
+	rect solid ink 4 from 0,40 to 320,117
+	rect solid ink 6 from 0,118 to 320,142
+	rect solid ink 11 from 0,143 to 320,160
+	rect solid ink 0 from 0,161 to 320,210
+	rect solid ink 11 from 0,211 to 320,220
+	rect solid ink 10 from 0,0 to 320,40
+	ellipse ink 10 solid from 80,30 to 0,60 : ' coordinates are right top left bottom
+	ellipse ink 10 solid from 200,30 to 120,50
+	pittype = room & $38
+	objtype = room & $07
+	call DrawObjects()
+	call DrawPit()
+	call DrawWall()
+	text str$(room) solid ink 4 to 0,180
+endproc
+'
+proc DrawPit()
+	' pittype, bit 3-5
+	' $00 000	one hole in the ground
+	' $08 001	three holes in the ground
+	' $10 010	zero holes in the ground
+	' $18 011	zero holes in the ground
+	' $20 100	crocodiles in the water
+	' $28 101	shifting tar pit with treasure no vine
+	' $30 110	shifting tar pit with vine
+	' $38 111	shifting quicksand
+	if pittype = $00
+		rect solid ink 0 from 139,120 to 160,140
+		rect solid ink 0 from 139,143 to 160,160
+		for i = 0 to 3
+			image $01 to 142, 143 + i*16
+		next
+	endif
+	if pittype = $08
+		rect solid ink 0 from 139,120 to 160,140
+		rect solid ink 0 from 139,143 to 160,160
+		rect solid ink 0 from 60,120 to 100,140
+		rect solid ink 0 from 200,120 to 240,140
+		for i = 0 to 3
+			image $01 to 142, 143 + i*16
+		next	
+	endif
+	if pittype = $20
+		ellipse ink 5 solid from 260,122 to 80,140
+	endif
+	if pittype = $28
+		ellipse ink 8 solid from 260,122 to 80,140
+	endif
+	if pittype = $30
+		ellipse ink 8 solid from 260,122 to 80,140
+	endif
+	if pittype = $38
+		ellipse ink 5 solid from 260,122 to 80,140
+	endif
+endproc
+'
+proc DrawObjects()
+	' Bits	Item				Treasure
+	' 000	one rolling log		money
+	' 001	two rolling logs	silver
+	' 010	two rolling logs	gold
+	' 011	three rolling logs	ring
+	' 100	one stationary log	money
+	' 101	3 stationary logs	silver
+	' 110	fire				gold
+	' 111	snake				ring
+	if pittype = $28
+		' draw treasure
+		if objtype & 3 = 0
+			' draw money
+			sprite 5 image $80 to 300,130
+		endif
+		if objtype & 3 = 1
+			' draw silver
+			sprite 5 image $81 to 300,130
+		endif
+		if objtype & 3 = 2
+			' draw gold
+			sprite 5 image $82 to 300,130
+		endif
+		if objtype & 3 = 3
+			' draw ring
+			sprite 5 image $83 to 300,130
+		endif
+	endif
+endproc
+'
+proc DrawWall()
+	if roomwall
+		if room > 127
+			' draw wall on right
+			for i = 0 to 3
+				image $00 flip 0 to 290,160+i*16
+				image $00 flip 1 to 306,160+i*16
+			next 
+		else
+			' draw wall on left
+			for i = 0 to 3
+				image $00 flip 0 to 50,160+i*16
+				image $00 flip 1 to 66,160+i*16
+			next 
+		endif
+	endif
+endproc
+'
+proc MoveHarry()
+	local fire,dx,dy
+	fire = joypad(dx,dy)
+	if harryjumping > 0 then harryjumping = harryjumping - 1 : sprite 0 image runharrys(1) flip harrydir to xHarry, (yHarry - 10) + abs(10 - harryjumping)
+	if (fire <> 0) & harryjumping = 0 then harryjumping = 20 : sfx 0,23
+	if dx > 0 & ((yHarry = 120) | (yHarry = roombottom))
+		harrydir = 0
+		runharryCount = (runharryCount + 1) % 5
+		if xHarry < 319
+			xHarry = xHarry + 1
+			sprite 0 image runharrys(runharryCount) flip harrydir to xHarry, yHarry
+		else
+			xHarry = 0
+			call NextRoom()
+			' room = rand(256)
+			call DrawRoom()
+			sprite 0 image runharrys(runharryCount) flip harrydir to xHarry, yHarry
+		endif
+	endif
+	if dx < 0 & ((yHarry = 120) | (yHarry = roombottom))
+		harrydir = 1
+		runharryCount = (runharryCount + 1) % 5 
+		if xHarry > 0 
+			xHarry = xHarry - 1
+			sprite 0 image runharrys(runharryCount) flip harrydir to xHarry, yHarry
+		else
+			call PrevRoom()
+		endif
+	endif
+	if (dy > 0) & (xHarry > 139) & (xHarry < 160)
+		if yHarry < roombottom
+			yHarry = yHarry + 1
+			sprite 0 image $C7 + (yHarry % 2) to xHarry, yHarry
+		endif
+	endif
+	if (dy < 0) & (xHarry > 139) & (xHarry < 160)
+		if yHarry > 120
+			yHarry = yHarry - 1
+			sprite 0 image $C7 + (yHarry % 2) to xHarry, yHarry
+		endif
+	endif
+endproc
+'
+proc NextRoom()
+	' room' = room << 1 | (bit3 + bit4 + bit5 + bit7)
+	poke roomaddr, room
+	for pass = 0 to 1
+		o = pass * 1
+		p = roomnext
+.loop_next
+		lda roomaddr
+		asl
+		eor roomaddr
+		asl
+		eor roomaddr
+		asl
+		asl
+		eor roomaddr
+		asl
+		rol roomaddr
+		dex
+		bpl loop_next
+		rts
+	next
+	sys roomnext
+	room = peek(roomaddr)
+endproc
+'
+proc PrevRoom()
+	'  room' = room >> 1 | ((bit4 + bit5 + bit6 + bit0) * 128)
+	poke roomaddr, room
+	for pass = 0 to 1
+		o = pass * 1
+		p = roomprev
+.loop_prev
+    	lda roomaddr
+    	asl
+    	eor roomaddr
+    	asl
+    	eor roomaddr
+    	asl
+    	asl
+    	rol
+    	eor roomaddr
+    	lsr
+    	ror roomaddr
+    	dex
+    	bpl loop_prev
+		rts
+	next
+	sys roomprev
+	room = peek(roomaddr)
+endproc
+'
+' Harry's run sequence
+'
+DATA $C0,$C1,$C2,$C3,$C4,$C5
